@@ -500,7 +500,17 @@ static void on_close(uv_handle_t* handle) {
   if (luv_get_callback(L, "onclose")) {
     luv_call(L, 1, 0);
   }
-  luv_handle_unref(L, handle->data);
+  luv_handle_t* lhandle = handle->data;
+  luv_handle_unref(L, lhandle);
+   
+  if (lhandle->ref != LUA_NOREF) {
+    assert(lhandle->refCount);
+/*    fprintf(stderr, "WARNING: closed %s with %d extra refs lhandle=%p handle=%p\n", lhandle->type, lhandle->refCount, handle->data, handle);*/
+    lhandle->refCount = 1;
+    luv_handle_unref(L, handle->data);
+  }
+
+  assert(lhandle->ref == LUA_NOREF);
 #ifdef LUV_STACK_CHECK
   assert(lua_gettop(L) == top);
 #endif
@@ -631,11 +641,11 @@ static int luv_timer_stop(lua_State* L) {
   int top = lua_gettop(L);
 #endif
   uv_timer_t* handle = luv_get_timer(L, 1);
-  luv_handle_unref(L, handle->data);
   if (uv_timer_stop(handle)) {
     uv_err_t err = uv_last_error(uv_default_loop());
     return luaL_error(L, "timer_stop: %s", uv_strerror(err));
   }
+  luv_handle_unref(L, handle->data);
 #ifdef LUV_STACK_CHECK
   assert(lua_gettop(L) == top);
 #endif
@@ -1275,6 +1285,9 @@ void luv_process_on_exit(uv_process_t* process, int exit_status, int term_signal
     lua_pushinteger(L, term_signal);
     luv_call(L, 3, 0);
   }
+
+  luv_handle_unref(L, process->data);
+
 #ifdef LUV_STACK_CHECK
   assert(lua_gettop(L) == top);
 #endif
